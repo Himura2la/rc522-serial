@@ -1,7 +1,6 @@
 import serial
 import serial.tools.list_ports
 
-
 __version__ = "1.0.0"
 
 
@@ -48,13 +47,23 @@ class RFID(object):
 
         # Initialize
         self.reset()
+
+        versions = {0x88: 'clone', 0x90: 'v0.0', 0x91: 'v1.0', 0x92: 'v2.0'}
+        version = self.dev_read(0x37)
+        if version in (0x00, 0xFF):
+            print("No board found, trying to continue...")
+        elif version in versions.keys():
+            print("Found MFRC522 " + versions[version] + ". Setting up.")
+        else:
+            print("Found unknown MFRC522, trying to continue...")
+
         self.dev_write(0x2A, 0x8D)
         self.dev_write(0x2B, 0x3E)
         self.dev_write(0x2D, 30)
         self.dev_write(0x2C, 0)
         self.dev_write(0x15, 0x40)
         self.dev_write(0x11, 0x3D)
-        self.set_antenna(True)
+        self.switch_antenna(True)
 
     def dev_write(self, address, value):
         command = address & ~(1 << 7)
@@ -76,8 +85,8 @@ class RFID(object):
         current = self.dev_read(address)
         self.dev_write(address, current & (~mask))
 
-    def set_antenna(self, state):
-        if state == True:
+    def switch_antenna(self, state):
+        if state:
             current = self.dev_read(self.reg_tx_control)
             if ~(current & 0x03):
                 self.set_bitmask(self.reg_tx_control, 0x03)
@@ -150,50 +159,44 @@ class RFID(object):
                 print("E2")
                 error = True
 
-        return (error, back_data, back_length)
+        return error, back_data, back_length
 
+    """
+    Requests for tag.
+    Returns False if no tag is present, otherwise returns (True, tag_type)
+    """
     def request(self, req_mode=0x26):
-        """
-        Requests for tag.
-        Returns (False, None) if no tag is present, otherwise returns (True, tag type)
-        """
-        error = True
-        back_bits = 0
-
         self.dev_write(0x0D, 0x07)
-        (error, back_data, back_bits) = self.card_write(self.mode_transrec, [req_mode, ])
-
+        error, back_data, back_bits = self.card_write(self.mode_transrec, [req_mode, ])
         if error or (back_bits != 0x10):
-            return (True, None)
+            return False, back_bits
+        return True, back_bits
 
-        return (False, back_bits)
-
+    """
+    Anti-collision detection.
+    Returns tuple of (error_state, tag_ID).
+    """
     def anticoll(self):
-        """
-        Anti-collision detection.
-        Returns tuple of (error state, tag ID).
-        """
-        back_data = []
         serial_number = []
-
         serial_number_check = 0
 
         self.dev_write(0x0D, 0x00)
         serial_number.append(self.act_anticl)
         serial_number.append(0x20)
 
-        (error, back_data, back_bits) = self.card_write(self.mode_transrec, serial_number)
-        if not error:
-            if len(back_data) == 5:
-                for i in range(4):
-                    serial_number_check = serial_number_check ^ back_data[i]
+        error, back_data, back_bits = self.card_write(self.mode_transrec, serial_number)
+        if error:
+            return False, back_data
 
-                if serial_number_check != back_data[4]:
-                    error = True
-            else:
-                error = True
+        if len(back_data) == 5:
+            for i in range(4):
+                serial_number_check = serial_number_check ^ back_data[i]
 
-        return (error, back_data)
+            if serial_number_check != back_data[4]:
+                return False, back_data
+        else:
+            return False, back_data
+        return True, back_data
 
     def calculate_crc(self, data):
         self.clear_bitmask(0x05, 0x04)
@@ -209,24 +212,15 @@ class RFID(object):
             i -= 1
             if not ((i != 0) and not (n & 0x04)):
                 break
+        return [self.dev_read(0x22), self.dev_read(0x21)]
 
-        ret_data = []
-        ret_data.append(self.dev_read(0x22))
-        ret_data.append(self.dev_read(0x21))
-
-        return ret_data
-
+    """
+    Selects tag for further usage.
+    uid -- list or tuple with four bytes tag ID
+    Returns True if succeed.
+    """
     def select_tag(self, uid):
-        """
-        Selects tag for further usage.
-        uid -- list or tuple with four bytes tag ID
-        Returns error state.
-        """
-        back_data = []
-        buf = []
-
-        buf.append(self.act_select)
-        buf.append(0x70)
+        buf = [self.act_select, 0x70]
 
         for i in range(5):
             buf.append(uid[i])
@@ -238,21 +232,20 @@ class RFID(object):
         (error, back_data, back_length) = self.card_write(self.mode_transrec, buf)
 
         if (not error) and (back_length == 0x18):
-            return False
-        else:
             return True
+        else:
+            return False
 
+    """
+    Authenticates to use specified block address. Tag must be selected using select_tag(uid) before auth.
+    auth_mode -- RFID.auth_a or RFID.auth_b
+    key -- list or tuple with six bytes key
+    uid -- list or tuple with four bytes tag ID
+    Returns error state.
+    """
     def card_auth(self, auth_mode, block_address, key, uid):
-        """
-        Authenticates to use specified block address. Tag must be selected using select_tag(uid) before auth.
-        auth_mode -- RFID.auth_a or RFID.auth_b
-        key -- list or tuple with six bytes key
-        uid -- list or tuple with four bytes tag ID
-        Returns error state.
-        """
-        buf = []
-        buf.append(auth_mode)
-        buf.append(block_address)
+
+        buf = [auth_mode, block_address]
 
         for i in range(len(key)):
             buf.append(key[i])
@@ -269,41 +262,31 @@ class RFID(object):
 
         return error
 
+    """Ends operations with Crypto1 usage."""
     def stop_crypto(self):
-        """Ends operations with Crypto1 usage."""
         self.clear_bitmask(0x08, 0x08)
         self.authed = False
 
+    """Switch state to HALT"""
     def halt(self):
-        """Switch state to HALT"""
-
-        buf = []
-        buf.append(self.act_end)
-        buf.append(0)
-
-        crc = self.calculate_crc(buf)
         self.clear_bitmask(0x08, 0x80)
-        self.card_write(self.mode_transrec, buf)
+        self.card_write(self.mode_transrec, [self.act_end, 0])
         self.clear_bitmask(0x08, 0x08)
         self.authed = False
 
+    """
+    Reads data from block. You should be authenticated before calling read.
+    Returns tuple of (error state, read data).
+    """
     def read(self, block_address):
-        """
-        Reads data from block. You should be authenticated before calling read.
-        Returns tuple of (error state, read data).
-        """
-        buf = []
-        buf.append(self.act_read)
-        buf.append(block_address)
-        crc = self.calculate_crc(buf)
-        buf.append(crc[0])
-        buf.append(crc[1])
-        (error, back_data, back_length) = self.card_write(self.mode_transrec, buf)
+        buf = [self.act_read, block_address]
+        buf += self.calculate_crc(buf)
+        error, back_data, back_length = self.card_write(self.mode_transrec, buf)
 
         if len(back_data) != 16:
             error = True
 
-        return (error, back_data)
+        return error, back_data
 
     def write(self, block_address, data):
         """
@@ -317,7 +300,7 @@ class RFID(object):
         buf.append(crc[0])
         buf.append(crc[1])
         (error, back_data, back_length) = self.card_write(self.mode_transrec, buf)
-        if not(back_length == 4) or not((back_data[0] & 0x0F) == 0x0A):
+        if not (back_length == 4) or not ((back_data[0] & 0x0F) == 0x0A):
             error = True
 
         if not error:
@@ -329,7 +312,7 @@ class RFID(object):
             buf_w.append(crc[0])
             buf_w.append(crc[1])
             (error, back_data, back_length) = self.card_write(self.mode_transrec, buf_w)
-            if not(back_length == 4) or not((back_data[0] & 0x0F) == 0x0A):
+            if not (back_length == 4) or not ((back_data[0] & 0x0F) == 0x0A):
                 error = True
 
         return error
@@ -337,13 +320,12 @@ class RFID(object):
     def reset(self):
         self.dev_write(0x01, self.mode_reset)
 
+    """
+    Calls stop_crypto() if needed and cleanups GPIO.
+    """
     def cleanup(self):
-        """
-        Calls stop_crypto() if needed and cleanups GPIO.
-        """
         if self.authed:
             self.stop_crypto()
-        GPIO.cleanup()
 
     def util(self):
         """
