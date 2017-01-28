@@ -1,17 +1,11 @@
-import time
-import signal
-
-import spi as SPI
-import RPi.GPIO as GPIO
+import serial
+import serial.tools.list_ports
 
 
-__version__ = "1.1.0"
+__version__ = "1.0.0"
 
 
 class RFID(object):
-    pin_rst = 22
-    pin_ce = 0
-
     mode_idle = 0x00
     mode_auth = 0x0E
     mode_receive = 0x08
@@ -41,17 +35,18 @@ class RFID(object):
 
     authed = False
 
-    def __init__(self, dev='/dev/spidev0.0', speed=1000000, pin_rst=22, pin_ce=0):
-        self.pin_rst = pin_rst
-        self.pin_ce = pin_ce
+    def __init__(self, dev=None):
+        if not dev:
+            try:
+                self.port = list(serial.tools.list_ports.grep("USB"))[0].device
+            except IndexError:
+                self.port = list(serial.tools.list_ports.comports())[0].device
+        else:
+            self.port = dev
+        self.baud_rate = 9600
+        self.serial = serial.Serial(self.port, self.baud_rate)
 
-        SPI.openSPI(device=dev, speed=speed)
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(pin_rst, GPIO.OUT)
-        GPIO.output(pin_rst, 1)
-        if pin_ce != 0:
-            GPIO.setup(pin_ce, GPIO.OUT)
-            GPIO.output(pin_ce, 1)
+        # Initialize
         self.reset()
         self.dev_write(0x2A, 0x8D)
         self.dev_write(0x2B, 0x3E)
@@ -61,19 +56,17 @@ class RFID(object):
         self.dev_write(0x11, 0x3D)
         self.set_antenna(True)
 
-    def spi_transfer(self, data):
-        if self.pin_ce != 0:
-            GPIO.output(self.pin_ce, 0)
-        r = SPI.transfer(data)
-        if self.pin_ce != 0:
-            GPIO.output(self.pin_ce, 1)
-        return r
-
     def dev_write(self, address, value):
-        self.spi_transfer(((address << 1) & 0x7E, value))
+        command = address & ~(1 << 7)
+        self.serial.write(serial.to_bytes([command, value]))
+        response = self.serial.read(1)[0]
+        if not address == response:
+            print("W[FAIL] *{0:#04x} -> {1:#010b}: ret={2:#04x}".format(address, value, response))
 
     def dev_read(self, address):
-        return self.spi_transfer((((address << 1) & 0x7E) | 0x80, 0))[1]
+        command = address | (1 << 7)
+        self.serial.write(serial.to_bytes([command]))
+        return self.serial.read(1)[0]
 
     def set_bitmask(self, address, mask):
         current = self.dev_read(address)
