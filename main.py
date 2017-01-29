@@ -33,7 +33,7 @@ class Application(ttk.Frame):
         self.w_in = ttk.Entry(self.w_toolbar, width=3, textvariable=self.input)
 
         self.w_out = tkinter.Text(self, height=1)
-        self.w_progressbar = ttk.Progressbar(self)
+        # self.w_progressbar = ttk.Progressbar(self)
 
         # Layouting
 
@@ -44,7 +44,7 @@ class Application(ttk.Frame):
 
         self.w_toolbar.pack(side='top', fill="x")
         self.w_out.pack(fill='both', expand=True)
-        self.w_progressbar.pack(side="bottom", fill="x")
+        # self.w_progressbar.pack(side="bottom", fill="x")
 
         self.button_state("disconnected")
 
@@ -102,6 +102,7 @@ class Application(ttk.Frame):
 
     def output(self, *text, end="\n"):
         self.w_out.insert('end', " ".join(text) + end)
+        self.w_out.see('end')
 
     def dump_sync(self, size):
         self.output("Waiting for a tag...")
@@ -126,11 +127,8 @@ class Application(ttk.Frame):
 
 root = tkinter.Tk()
 app = Application(master=root)
-app.output("Begin")
+app.output("Started.")
 app.mainloop()
 
 if app.rdr:
     app.rdr.cleanup()
-
-
-
