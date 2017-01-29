@@ -36,6 +36,7 @@ class RFID(object):
 
     def __init__(self, dev=None, output_func=print):
         self.output = output_func
+        self.connected = False
         if not dev:
             try:
                 self.port = list(serial.tools.list_ports.grep("USB"))[0].device
@@ -45,14 +46,18 @@ class RFID(object):
             self.port = dev
         self.baud_rate = 9600
         self.serial = serial.Serial(self.port, self.baud_rate)
+        self.serial.timeout = 5
 
         # Initialize
-        self.reset()
+        if not self.reset():
+            self.output("MFRC522 does not answer. Closing port.")
+            self.serial.close()
+            return
 
         versions = {0x88: 'clone', 0x90: 'v0.0', 0x91: 'v1.0', 0x92: 'v2.0'}
         version = self.dev_read(0x37)
         if version in (0x00, 0xFF):
-            self.output("No board found, trying to continue...")
+            self.output("Possible communication problems, trying to continue...")
         elif version in versions.keys():
             self.output("Found MFRC522 " + versions[version] + ". Setting up.")
         else:
@@ -65,13 +70,19 @@ class RFID(object):
         self.dev_write(0x15, 0x40)
         self.dev_write(0x11, 0x3D)
         self.switch_antenna(True)
+        self.connected = True
 
     def dev_write(self, address, value):
         command = address & ~(1 << 7)
         self.serial.write(serial.to_bytes([command, value]))
-        response = self.serial.read(1)[0]
-        if not address == response:
-            self.output("W[FAIL] *{0:#04x} -> {1:#010b}: ret={2:#04x}".format(address, value, response))
+        response = self.serial.read(1)
+        if not response:
+            self.output("dev_write: Timeout exceeded. Just silence...")
+            return False
+        if not address == response[0]:
+            self.output("W[FAIL] *{0:#04x} -> {1:#010b}: ret={2:#04x}".format(address, value, response[0]))
+            return False
+        return True
 
     def dev_read(self, address):
         command = address | (1 << 7)
@@ -296,7 +307,7 @@ class RFID(object):
         return not error
 
     def reset(self):
-        self.dev_write(0x01, self.mode_reset)
+        return self.dev_write(0x01, self.mode_reset)
 
     """
     Calls stop_crypto() if needed and cleanups GPIO.
