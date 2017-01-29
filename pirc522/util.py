@@ -142,9 +142,11 @@ class RFIDUtil(object):
                 self.output("Error on " + self.sector_string(block_address))
         return error, data
 
-    def dump(self, sectors=16):
-        for i in range(sectors * 4):
+    def dump(self, sectors=16, start_from=0):
+        dump_range = range(start_from * 4, start_from * 4 + sectors * 4)
+        for i in dump_range:
             if i % 4 == 0 and i > 0:
                 self.output()
             self.read(i, silent=False)
+
 

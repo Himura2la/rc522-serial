@@ -27,8 +27,10 @@ class Application(ttk.Frame):
         self.w_port = ttk.Combobox(self.w_toolbar, values=self.ports_list, textvariable=self.port, width=15)
         self.w_port.current(self.ports_list.index(self.port.get()))
 
-        self.w_dump = ttk.Button(self.w_toolbar, text="Dump", command=self.dump, width=6,)
         self.w_connect = ttk.Button(self.w_toolbar, text="Connect", command=self.connect, width=10)
+        self.w_dump = ttk.Button(self.w_toolbar, text="Dump", command=self.dump, width=6)
+        self.w_read = ttk.Button(self.w_toolbar, text="Read", command=self.read, width=6)
+        self.w_write = ttk.Button(self.w_toolbar, text="Write", command=self.write, width=7)
         self.input = tkinter.StringVar(self)
         self.w_in = ttk.Entry(self.w_toolbar, width=3, textvariable=self.input)
 
@@ -40,29 +42,34 @@ class Application(ttk.Frame):
         self.w_port.pack(side='left')
         self.w_connect.pack(side='left')
         self.w_in.pack(side='left', fill='x', expand=True)
-        self.w_dump.pack(side='left')
+        self.w_write.pack(side='right')
+        self.w_read.pack(side='right')
+        self.w_dump.pack(side='right')
 
         self.w_toolbar.pack(side='top', fill="x")
         self.w_out.pack(fill='both', expand=True)
         # self.w_progressbar.pack(side="bottom", fill="x")
 
-        self.button_state("disconnected")
+        self.toolbar_state("disconnected")
 
         # Declaring
 
         self.rdr, self.util = None, None
+
+    def output(self, *text, end="\n"):
+        self.w_out.insert('end', " ".join(text) + end)
+        self.w_out.see('end')
 
     def connect(self):
         if not self.rdr:
             self.output("Connecting to RC522 via %s..." % self.port.get())
             t = threading.Thread(target=self.connect_sync)
             t.start()
-            self.button_state("connecting")
+            self.toolbar_state("connecting")
         else:
-            self.rdr.serial.close()
-            self.rdr.cleanup()
+            app.rdr.cleanup()
             self.rdr, self.util = None, None
-            self.button_state('disconnected')
+            self.toolbar_state('disconnected')
             self.output("Port %s was closed." % self.port.get())
 
     def connect_sync(self):
@@ -70,41 +77,44 @@ class Application(ttk.Frame):
         if self.rdr.connected:
             self.util = self.rdr.util()
             self.util.debug = True
-            self.button_state('connected')
+            self.toolbar_state('connected')
             self.output("Ready!")
         else:
             self.rdr = None
-            self.button_state('disconnected')
+            self.toolbar_state('disconnected')
 
-    def button_state(self, state):
+    def toolbar_state(self, state):
         if state == "disconnected":
+            self.w_port['state'] = 'normal'
             self.w_connect['state'] = 'normal'
             self.w_connect['text'] = "Connect"
+            self.w_in['state'] = 'disabled'
             self.w_dump['state'] = 'disabled'
-        if state == "connecting":
+            self.w_read['state'] = 'disabled'
+            self.w_write['state'] = 'disabled'
+        elif state == "connecting":
             self.w_connect['text'] = "Waiting..."
             self.w_connect['state'] = 'disabled'
-        if state == "connected":
-            self.w_dump['state'] = 'normal'
+        elif state == "connected":
+            self.w_port['state'] = 'disabled'
             self.w_connect['state'] = 'normal'
             self.w_connect['text'] = "Disconnect"
+            self.w_in['state'] = 'normal'
+            self.w_dump['state'] = 'normal'
+            self.w_read['state'] = 'normal'
+            self.w_write['state'] = 'normal'
 
     def dump(self):
         try:
-            blocks = int(self.input.get())
+            sectors = int(self.input.get())
         except ValueError:
             self.input.set("1")
-            blocks = int(self.input.get())
-            self.output("Unable to read the number of blocks. Dumping one...")
+            sectors = int(self.input.get())
+            self.output("Unable to read the number of sectors. Dumping one...")
 
-        t = threading.Thread(target=self.dump_sync, args=(blocks,))
-        t.start()
+        threading.Thread(target=self.tag_sync, args=(self.util.dump, (sectors,))).start()
 
-    def output(self, *text, end="\n"):
-        self.w_out.insert('end', " ".join(text) + end)
-        self.w_out.see('end')
-
-    def dump_sync(self, size):
+    def tag_sync(self, func, args):
         self.output("Waiting for a tag...")
         while True:
             time.sleep(0.3)
@@ -119,11 +129,40 @@ class Application(ttk.Frame):
                 self.util.auth(self.rdr.auth_b, [0xFF] * 6)
 
                 self.output("Reading...")
-                self.util.dump(size)
+                func(*args)
 
                 self.output("Deauthorizing...")
                 self.util.deauth()
                 break
+        self.output("Ready!")
+
+    def read(self):
+        user_input = self.w_in.get().upper()
+        sector = user_input.split("S")
+        block = None
+        try:
+            sector = sector[1]
+            sector = int(sector)
+        except ValueError:  # block is specified
+            try:
+                sector, block = sector.split("B")
+                sector = int(sector)
+                block = int(block)
+            except ValueError:
+                self.output("Examples: 'S1B1', 'S1'")
+                return
+        except IndexError:
+            if type(sector) is not int:
+                self.output("Examples: 'S1B1', 'S1'")
+                return
+        if block is None:
+            threading.Thread(target=self.tag_sync, args=(self.util.dump, (1, sector))).start()
+        else:
+            threading.Thread(target=self.tag_sync, args=(self.util.read,
+                                                         (self.util.block_addr(sector, block), False))).start()
+
+    def write(self):
+        pass
 
 root = tkinter.Tk()
 app = Application(master=root)

@@ -315,6 +315,7 @@ class RFID(object):
     def cleanup(self):
         if self.authed:
             self.stop_crypto()
+        self.serial.close()
 
     """
     Creates and returns RFIDUtil object for this RFID instance.
