@@ -77,9 +77,13 @@ class RFIDUtil(object):
         auth_data = block_address, self.method, self.key, self.uid
         if (self.last_auth != auth_data) or force:
             if self.debug and not silent:
-                print("Auth into" + self.sector_string(block_address))
+                print("Auth into", self.sector_string(block_address))
             self.last_auth = auth_data
-            return self.rfid.card_auth(self.method, block_address, self.key, self.uid)
+            if self.key:
+                return self.rfid.card_auth(self.method, block_address, self.key, self.uid)
+            else:
+                print("Auth into is not set")
+                return False
         else:
             if self.debug and not silent:
                 print("Already authenticated")
@@ -139,6 +143,7 @@ class RFIDUtil(object):
 
     def dump(self, sectors=16):
         for i in range(sectors * 4):
-            self.read(i, silent=False)
             if i % 4 == 0 and i > 0:
                 print()
+            self.read(i, silent=False)
+

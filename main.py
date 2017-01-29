@@ -12,8 +12,8 @@ print("Waiting for tag...")
 
 while True:
     try:
+        time.sleep(0.3)
         success, data = rdr.request()
-
         if success:
             print("\nDetected: {:#04x}".format(data))
 
@@ -22,14 +22,19 @@ while True:
 
             print("\nAuthorizing...")
             util.auth(rdr.auth_b, [0xFF] * 6)
-            print("\nReading...")
 
-            util.dump(1)
+            print("Writing")
+            block = util.block_addr(0, 2)
+            util.do_auth(block)
+            print(rdr.write(block, [0]*16))
+
+            print("\nReading...")
+            util.dump(3)
 
             print("\nDeauthorizing...")
             util.deauth()
 
-            time.sleep(3)
+            time.sleep(4)
             print("\nWaiting for tag...")
     except KeyboardInterrupt:
         break

@@ -274,15 +274,11 @@ class RFID(object):
 
     """
     Writes data to block. You should be authenticated before calling write.
-    Returns error state.
+    Returns True if succeed.
     """
     def write(self, block_address, data):
-        buf = []
-        buf.append(self.act_write)
-        buf.append(block_address)
-        crc = self.calculate_crc(buf)
-        buf.append(crc[0])
-        buf.append(crc[1])
+        buf = [self.act_write, block_address]
+        buf += self.calculate_crc(buf)
         error, back_data, back_length = self.card_write(self.mode_transrec, buf)
         if not (back_length == 4) or not ((back_data[0] & 0x0F) == 0x0A):
             error = True
@@ -292,14 +288,11 @@ class RFID(object):
             for i in range(16):
                 buf_w.append(data[i])
 
-            crc = self.calculate_crc(buf_w)
-            buf_w.append(crc[0])
-            buf_w.append(crc[1])
+            buf_w += self.calculate_crc(buf_w)
             error, back_data, back_length = self.card_write(self.mode_transrec, buf_w)
             if not (back_length == 4) or not ((back_data[0] & 0x0F) == 0x0A):
                 error = True
-
-        return error
+        return not error
 
     def reset(self):
         self.dev_write(0x01, self.mode_reset)
