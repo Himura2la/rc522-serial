@@ -13,12 +13,13 @@ print("Waiting for tag...")
 while True:
     try:
         success, data = rdr.request()
+
         if success:
             print("\nDetected: {:#04x}".format(data))
 
-        success, uid = rdr.anti_collision()
-        if success:
+            success, uid = rdr.anti_collision()
             util.set_tag(uid)
+
             print("\nAuthorizing...")
             util.auth(rdr.auth_b, [0xFF] * 6)
             print("\nReading...")

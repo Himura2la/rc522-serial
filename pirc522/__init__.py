@@ -121,21 +121,24 @@ class RFID(object):
         if command == self.mode_transrec:
             self.set_bitmask(0x0D, 0x80)
 
-        i = 2000
         while True:
             n = self.dev_read(0x04)
-            i -= 1
-            if ~((i != 0) and ~(n & 0x01) and ~(n & irq_wait)):
-                break
+            if n == 0:
+                continue  # Too fast
+            if n & irq_wait:
+                break  # Got it!
+            if n & 0x01:
+                error = True
+                break  # The timer decrements the timer value in register TCounterValReg to zero
 
         self.clear_bitmask(0x0D, 0x80)
 
-        if i != 0:
+        if not error:
             if (self.dev_read(0x06) & 0x1B) == 0x00:
                 error = False
 
                 if n & irq & 0x01:
-                    print("card_write: Error 1")
+                    print("card_write Error")
                     error = True
 
                 if command == self.mode_transrec:
@@ -154,9 +157,6 @@ class RFID(object):
 
                     for i in range(n):
                         back_data.append(self.dev_read(0x09))
-            else:
-                print("card_write: Error 2")
-                error = True
 
         return error, back_data, back_length
 
@@ -191,7 +191,7 @@ class RFID(object):
                 return False, response
         else:
             return False, response
-        return True, response
+        return True, uid
 
     def calculate_crc(self, data):
         self.clear_bitmask(0x05, 0x04)
@@ -207,7 +207,7 @@ class RFID(object):
             i -= 1
             if not ((i != 0) and not (n & 0x04)):
                 break
-        return self.dev_read(0x22), self.dev_read(0x21)
+        return [self.dev_read(0x22), self.dev_read(0x21)]
 
     """
     Selects tag for further usage.
@@ -215,14 +215,12 @@ class RFID(object):
     Returns True if succeed.
     """
     def select_tag(self, uid):
-        buf = [self.act_select, 0x70]
-
-        for i in range(5):
-            buf.append(uid[i])
-
-        crc = self.calculate_crc(buf)
-        buf.append(crc[0])
-        buf.append(crc[1])
+        buf = [self.act_select, 0x70] + uid
+        uid_check = 0
+        for byte in uid:
+            uid_check = uid_check ^ byte
+        buf.append(uid_check)
+        buf += self.calculate_crc(buf)
 
         error, back_data, back_length = self.card_write(self.mode_transrec, buf)
 
@@ -239,11 +237,7 @@ class RFID(object):
     Returns True in case of success.
     """
     def card_auth(self, auth_mode, block_address, key, uid):
-        buf = [auth_mode, block_address]
-        for i in range(len(key)):
-            buf.append(key[i])
-        for i in range(4):
-            buf.append(uid[i])
+        buf = [auth_mode, block_address] + key + uid
         error, back_data, back_length = self.card_write(self.mode_auth, buf)
 
         if not (self.dev_read(0x08) & 0x08) != 0:
