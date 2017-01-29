@@ -7,7 +7,8 @@ class RFIDUtil(object):
     last_auth = None
     debug = False
 
-    def __init__(self, rfid):
+    def __init__(self, rfid, output_func=print):
+        self.output = output_func
         self.rfid = rfid
 
     """
@@ -31,7 +32,7 @@ class RFIDUtil(object):
     """
     def set_tag(self, uid):
         if self.debug:
-            print("Selecting UID " + ":".join(["{:02x}".format(byte) for byte in uid]))
+            self.output("Selecting UID " + ":".join(["{:02x}".format(byte) for byte in uid]))
 
         if self.uid:
             self.deauth()
@@ -47,8 +48,8 @@ class RFIDUtil(object):
         self.key = key
 
         if self.debug:
-            print("Key: " + ":".join(["{:02x}".format(byte) for byte in key]) +
-                  ", Method " + ("A" if auth_method == self.rfid.auth_a else "B"))
+            self.output("Key: " + ":".join(["{:02x}".format(byte) for byte in key]) +
+                        ", Method " + ("A" if auth_method == self.rfid.auth_a else "B"))
 
     """
     Resets authentication info. Calls stop_crypto() if RFID is in auth state
@@ -59,12 +60,12 @@ class RFIDUtil(object):
         self.last_auth = None
 
         if self.debug:
-            print("Cleaning auth info")
+            self.output("Cleaning auth info")
 
         if self.rfid.authed:
             self.rfid.stop_crypto()
             if self.debug:
-                print("Stopping Crypto1")
+                self.output("Stopping Crypto1")
 
     def is_tag_set_auth(self):
         return self.uid or self.key or self.method
@@ -77,16 +78,16 @@ class RFIDUtil(object):
         auth_data = block_address, self.method, self.key, self.uid
         if (self.last_auth != auth_data) or force:
             if self.debug and not silent:
-                print("Auth into", self.sector_string(block_address))
+                self.output("Auth into", self.sector_string(block_address))
             self.last_auth = auth_data
             if self.key:
                 return self.rfid.card_auth(self.method, block_address, self.key, self.uid)
             else:
-                print("Auth into is not set")
+                self.output("Auth into is not set")
                 return False
         else:
             if self.debug and not silent:
-                print("Already authenticated")
+                self.output("Already authenticated")
             return True
 
     """
@@ -114,12 +115,12 @@ class RFIDUtil(object):
                 for i in range(len(new_bytes)):
                     if new_bytes[i]:
                         if self.debug:
-                            print("Rewrite [{0}]: {:#04x} -> {:#04x}".format(i, data[i], new_bytes[i]))
+                            self.output("Rewrite [{0}]: {:#04x} -> {:#04x}".format(i, data[i], new_bytes[i]))
                         data[i] = new_bytes[i]
 
                 error = self.rfid.write(block_address, data)
                 if self.debug:
-                    print("Writing " + str(data) + " to " + self.sector_string(block_address))
+                    self.output("Writing " + str(data) + " to " + self.sector_string(block_address))
         return error
 
     """
@@ -133,17 +134,17 @@ class RFIDUtil(object):
         error, data = self.rfid.read(block_address)
         if not silent:
             if not error:
-                print(self.sector_string(block_address) + ": ", end="")
+                self.output(self.sector_string(block_address) + ": ", end="")
                 for chunk in zip(*[iter(data)]*4):
-                    print(" ".join(["{:02x}".format(byte) for byte in chunk]), end="  ")
-                print()
+                    self.output(" ".join(["{:02x}".format(byte) for byte in chunk]), end="  ")
+                self.output()
             else:
-                print("Error on " + self.sector_string(block_address))
+                self.output("Error on " + self.sector_string(block_address))
         return error, data
 
     def dump(self, sectors=16):
         for i in range(sectors * 4):
             if i % 4 == 0 and i > 0:
-                print()
+                self.output()
             self.read(i, silent=False)
 

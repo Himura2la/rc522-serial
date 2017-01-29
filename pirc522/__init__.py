@@ -34,7 +34,8 @@ class RFID(object):
 
     authed = False
 
-    def __init__(self, dev=None):
+    def __init__(self, dev=None, output_func=print):
+        self.output = output_func
         if not dev:
             try:
                 self.port = list(serial.tools.list_ports.grep("USB"))[0].device
@@ -51,11 +52,11 @@ class RFID(object):
         versions = {0x88: 'clone', 0x90: 'v0.0', 0x91: 'v1.0', 0x92: 'v2.0'}
         version = self.dev_read(0x37)
         if version in (0x00, 0xFF):
-            print("No board found, trying to continue...")
+            self.output("No board found, trying to continue...")
         elif version in versions.keys():
-            print("Found MFRC522 " + versions[version] + ". Setting up.")
+            self.output("Found MFRC522 " + versions[version] + ". Setting up.")
         else:
-            print("Found unknown MFRC522, trying to continue...")
+            self.output("Found unknown MFRC522, trying to continue...")
 
         self.dev_write(0x2A, 0x8D)
         self.dev_write(0x2B, 0x3E)
@@ -70,7 +71,7 @@ class RFID(object):
         self.serial.write(serial.to_bytes([command, value]))
         response = self.serial.read(1)[0]
         if not address == response:
-            print("W[FAIL] *{0:#04x} -> {1:#010b}: ret={2:#04x}".format(address, value, response))
+            self.output("W[FAIL] *{0:#04x} -> {1:#010b}: ret={2:#04x}".format(address, value, response))
 
     def dev_read(self, address):
         command = address | (1 << 7)
@@ -138,7 +139,7 @@ class RFID(object):
                 error = False
 
                 if n & irq & 0x01:
-                    print("card_write Error")
+                    self.output("card_write Error")
                     error = True
 
                 if command == self.mode_transrec:
@@ -311,6 +312,6 @@ class RFID(object):
     def util(self):
         try:
             from .util import RFIDUtil
-            return RFIDUtil(self)
+            return RFIDUtil(self, self.output)
         except ImportError:
             return None

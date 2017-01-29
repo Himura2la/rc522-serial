@@ -3,6 +3,7 @@
 import tkinter
 from tkinter import ttk
 from pirc522 import RFID
+import serial.tools.list_ports
 
 
 class Application(ttk.Frame):
@@ -16,14 +17,19 @@ class Application(ttk.Frame):
 
         self.w_toolbar = ttk.Frame(self)
 
-        self.ports_list = ["one", 'two']
-        self.port = None
-        self.w_port = ttk.Combobox(self.w_toolbar, values=self.ports_list, textvariable=self.port)
-        self.w_port.current(0)
+        self.ports_list = [p.device for p in serial.tools.list_ports.comports()]
 
-        self.w_dump = ttk.Button(self.w_toolbar, text="Dump", command=self.dump)
-        self.w_connect = ttk.Button(self.w_toolbar, text="Connect", command=self.connect)
-        self.w_in = ttk.Entry(self.w_toolbar)
+        try:
+            self.port = tkinter.StringVar(self, list(serial.tools.list_ports.grep("USB"))[0].device)
+        except IndexError:
+            self.port = tkinter.StringVar(self, self.ports_list[-1])
+        self.w_port = ttk.Combobox(self.w_toolbar, values=self.ports_list, textvariable=self.port, width=15)
+        self.w_port.current(self.ports_list.index(self.port.get()))
+
+        self.w_dump = ttk.Button(self.w_toolbar, text="Dump", command=self.dump, width=6)
+        self.w_connect = ttk.Button(self.w_toolbar, text="Connect", command=self.connect, width=8)
+        self.input = tkinter.StringVar(self)
+        self.w_in = ttk.Entry(self.w_toolbar, width=3, textvariable=self.input)
 
         self.w_out = tkinter.Text(self, height=1)
         self.w_progressbar = ttk.Progressbar(self)
@@ -39,27 +45,35 @@ class Application(ttk.Frame):
         self.w_out.pack(fill='both', expand=True)
         self.w_progressbar.pack(side="bottom", fill="x")
 
+        # Declaring
+
+        self.rdr = None
+        self.util = None
+
     def connect(self):
-        print("connect to", self.port)
+        self.rdr = RFID(self.port.get(), output_func=self.output)
+        self.util = self.rdr.util()
+        self.util.debug = True
 
     def dump(self):
-        print("dump", self.port)
+        try:
+            blocks = int(self.input.get())
+        except ValueError:
+            self.input.set("1")
+            blocks = int(self.input.get())
+            self.output("Unable to read the number of blocks. Dumping one...")
+
+
+    def output(self, *text, end="\n"):
+        self.w_out.insert('end', " ".join(text) + end)
 
 root = tkinter.Tk()
 app = Application(master=root)
+app.output("Begin")
 app.mainloop()
 
 exit()
 
-
-
-
-rdr = RFID()
-util = rdr.util()
-util.debug = True
-
-print("Used port:", rdr.serial.port)
-print("Waiting for tag...")
 
 while True:
     try:
