@@ -24,7 +24,7 @@ while run:
     if not error:
         print("\nDetected: " + format(data, "02x"))
 
-    (error, uid) = rdr.anticoll()
+    (error, uid) = rdr.anti_collision()
     if not error:
         print("Card read UID: "+str(uid[0])+","+str(uid[1])+","+str(uid[2])+","+str(uid[3]))
 
@@ -34,7 +34,7 @@ while run:
         util.auth(rdr.auth_a, [0xFF,0xFF,0xFF,0xFF,0xFF,0xFF])
         print("\nWriting modified bytes")
         util.rewrite(4, [None, None, 0x69, 0x24, 0x40])
-        util.read_out(4)
+        util.read(4)
         """
         print("\nWriting zero bytes")
         util.rewrite(2, [None, None, 0, 0, 0])

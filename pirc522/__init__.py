@@ -99,13 +99,12 @@ class RFID(object):
         error = False
         irq = 0x00
         irq_wait = 0x00
-        last_bits = None
         n = 0
 
         if command == self.mode_auth:
             irq = 0x12
             irq_wait = 0x10
-        if command == self.mode_transrec:
+        elif command == self.mode_transrec:
             irq = 0x77
             irq_wait = 0x30
 
@@ -136,7 +135,7 @@ class RFID(object):
                 error = False
 
                 if n & irq & 0x01:
-                    print("E1")
+                    print("card_write: Error 1")
                     error = True
 
                 if command == self.mode_transrec:
@@ -156,7 +155,7 @@ class RFID(object):
                     for i in range(n):
                         back_data.append(self.dev_read(0x09))
             else:
-                print("E2")
+                print("card_write: Error 2")
                 error = True
 
         return error, back_data, back_length
@@ -174,29 +173,25 @@ class RFID(object):
 
     """
     Anti-collision detection.
-    Returns tuple of (error_state, tag_ID).
+    Returns tuple of (success, tag_ID).
     """
-    def anticoll(self):
-        serial_number = []
-        serial_number_check = 0
-
+    def anti_collision(self):
+        uid_check = 0
         self.dev_write(0x0D, 0x00)
-        serial_number.append(self.act_anticl)
-        serial_number.append(0x20)
 
-        error, back_data, back_bits = self.card_write(self.mode_transrec, serial_number)
+        error, response, back_bits = self.card_write(self.mode_transrec, [self.act_anticl, 0x20])
         if error:
-            return False, back_data
-
-        if len(back_data) == 5:
-            for i in range(4):
-                serial_number_check = serial_number_check ^ back_data[i]
-
-            if serial_number_check != back_data[4]:
-                return False, back_data
+            return False, response
+        if len(response) == 5:
+            uid = response[:4]
+            check_byte = response[4]
+            for byte in uid:
+                uid_check = uid_check ^ byte
+            if uid_check != check_byte:
+                return False, response
         else:
-            return False, back_data
-        return True, back_data
+            return False, response
+        return True, response
 
     def calculate_crc(self, data):
         self.clear_bitmask(0x05, 0x04)
@@ -212,7 +207,7 @@ class RFID(object):
             i -= 1
             if not ((i != 0) and not (n & 0x04)):
                 break
-        return [self.dev_read(0x22), self.dev_read(0x21)]
+        return self.dev_read(0x22), self.dev_read(0x21)
 
     """
     Selects tag for further usage.
@@ -229,7 +224,7 @@ class RFID(object):
         buf.append(crc[0])
         buf.append(crc[1])
 
-        (error, back_data, back_length) = self.card_write(self.mode_transrec, buf)
+        error, back_data, back_length = self.card_write(self.mode_transrec, buf)
 
         if (not error) and (back_length == 0x18):
             return True
@@ -241,26 +236,21 @@ class RFID(object):
     auth_mode -- RFID.auth_a or RFID.auth_b
     key -- list or tuple with six bytes key
     uid -- list or tuple with four bytes tag ID
-    Returns error state.
+    Returns True in case of success.
     """
     def card_auth(self, auth_mode, block_address, key, uid):
-
         buf = [auth_mode, block_address]
-
         for i in range(len(key)):
             buf.append(key[i])
-
         for i in range(4):
             buf.append(uid[i])
+        error, back_data, back_length = self.card_write(self.mode_auth, buf)
 
-        (error, back_data, back_length) = self.card_write(self.mode_auth, buf)
         if not (self.dev_read(0x08) & 0x08) != 0:
             error = True
-
         if not error:
             self.authed = True
-
-        return error
+        return not error
 
     """Ends operations with Crypto1 usage."""
     def stop_crypto(self):
@@ -288,18 +278,18 @@ class RFID(object):
 
         return error, back_data
 
+    """
+    Writes data to block. You should be authenticated before calling write.
+    Returns error state.
+    """
     def write(self, block_address, data):
-        """
-        Writes data to block. You should be authenticated before calling write.
-        Returns error state.
-        """
         buf = []
         buf.append(self.act_write)
         buf.append(block_address)
         crc = self.calculate_crc(buf)
         buf.append(crc[0])
         buf.append(crc[1])
-        (error, back_data, back_length) = self.card_write(self.mode_transrec, buf)
+        error, back_data, back_length = self.card_write(self.mode_transrec, buf)
         if not (back_length == 4) or not ((back_data[0] & 0x0F) == 0x0A):
             error = True
 
@@ -311,7 +301,7 @@ class RFID(object):
             crc = self.calculate_crc(buf_w)
             buf_w.append(crc[0])
             buf_w.append(crc[1])
-            (error, back_data, back_length) = self.card_write(self.mode_transrec, buf_w)
+            error, back_data, back_length = self.card_write(self.mode_transrec, buf_w)
             if not (back_length == 4) or not ((back_data[0] & 0x0F) == 0x0A):
                 error = True
 
@@ -327,11 +317,11 @@ class RFID(object):
         if self.authed:
             self.stop_crypto()
 
+    """
+    Creates and returns RFIDUtil object for this RFID instance.
+    If module is not present, returns None.
+    """
     def util(self):
-        """
-        Creates and returns RFIDUtil object for this RFID instance.
-        If module is not present, returns None.
-        """
         try:
             from .util import RFIDUtil
             return RFIDUtil(self)

@@ -31,7 +31,7 @@ class RFIDUtil(object):
     """
     def set_tag(self, uid):
         if self.debug:
-            print("Selecting UID: 0x" + " ".join(["{:04x}".format(byte) for byte in uid]))
+            print("Selecting UID " + ":".join(["{:02x}".format(byte) for byte in uid]))
 
         if self.uid:
             self.deauth()
@@ -47,7 +47,7 @@ class RFIDUtil(object):
         self.key = key
 
         if self.debug:
-            print("Key: " + " ".join(["{:#04x}".format(byte) for byte in key]) +
+            print("Key: " + ":".join(["{:02x}".format(byte) for byte in key]) +
                   ", Method " + ("A" if auth_method == self.rfid.auth_a else "B"))
 
     """
@@ -67,24 +67,23 @@ class RFIDUtil(object):
                 print("Stopping Crypto1")
 
     def is_tag_set_auth(self):
-        return not (self.uid or self.key or self.method)
+        return self.uid or self.key or self.method
 
     """
     Calls RFID card_auth() with saved auth information if needed.
-    Returns error state from method call.
+    Returns True in case of success.
     """
-    def do_auth(self, block_address, force=False):
-        auth_data = (block_address, self.method, self.key, self.uid)
+    def do_auth(self, block_address, silent=False, force=False):
+        auth_data = block_address, self.method, self.key, self.uid
         if (self.last_auth != auth_data) or force:
-            if self.debug:
-                print("Calling card_auth on UID " + str(self.uid))
-
+            if self.debug and not silent:
+                print("Auth into" + self.sector_string(block_address))
             self.last_auth = auth_data
             return self.rfid.card_auth(self.method, block_address, self.key, self.uid)
         else:
-            if self.debug:
-                print("Not calling card_auth - already authed")
-            return False
+            if self.debug and not silent:
+                print("Already authenticated")
+            return True
 
     """
     Writes sector trailer of specified sector. Tag and auth must be set - does auth.
@@ -122,17 +121,24 @@ class RFIDUtil(object):
     """
     Prints sector/block number and contents of block. Tag and auth must be set - does auth.
     """
-    def read_out(self, block_address):
+    def read(self, block_address, silent=True):
         if not self.is_tag_set_auth():
-            return True
-
-        error = self.do_auth(block_address)
-        if not error:
-            error, data = self.rfid.read(block_address)
-            print(self.sector_string(block_address) + ": " + " ".join(["{:#04x}".format(byte) for byte in data]))
-        else:
-            print("Error on " + self.sector_string(block_address))
+            return False, None
+        if not self.do_auth(block_address, silent=True):
+            return False, None
+        error, data = self.rfid.read(block_address)
+        if not silent:
+            if not error:
+                print(self.sector_string(block_address) + ": ", end="")
+                for chunk in zip(*[iter(data)]*4):
+                    print(" ".join(["{:02x}".format(byte) for byte in chunk]), end="  ")
+                print()
+            else:
+                print("Error on " + self.sector_string(block_address))
+        return error, data
 
     def dump(self, sectors=16):
         for i in range(sectors * 4):
-            self.read_out(i)
+            self.read(i, silent=False)
+            if i % 4 == 0 and i > 0:
+                print()

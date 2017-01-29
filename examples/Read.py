@@ -16,7 +16,7 @@ while True:
         if success:
             print("\nDetected: {:#04x}".format(data))
 
-        success, uid = rdr.anticoll()
+        success, uid = rdr.anti_collision()
         if success:
             util.set_tag(uid)
             print("\nAuthorizing...")
