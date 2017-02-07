@@ -63,8 +63,7 @@ class Application(ttk.Frame):
     def connect(self):
         if not self.rdr:
             self.output("Connecting to RC522 via %s..." % self.port.get())
-            t = threading.Thread(target=self.connect_sync)
-            t.start()
+            threading.Thread(target=self.connect_sync).start()
             self.toolbar_state("connecting")
         else:
             app.rdr.cleanup()
