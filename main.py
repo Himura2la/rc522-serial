@@ -34,7 +34,7 @@ class Application(ttk.Frame):
         self.input = tkinter.StringVar(self)
         self.w_in = ttk.Entry(self.w_toolbar, width=3, textvariable=self.input)
 
-        self.w_out = tkinter.Text(self, height=1)
+        self.w_out = tkinter.Text(self, height=1, state="disabled")
         # self.w_progressbar = ttk.Progressbar(self)
 
         # Layouting
@@ -55,12 +55,19 @@ class Application(ttk.Frame):
         # Declaring
 
         self.rdr, self.util = None, None
+        self.pending_abort = False
 
     def output(self, *text, end="\n"):
+        self.w_out['state'] = "normal"
         self.w_out.insert('end', " ".join(text) + end)
         self.w_out.see('end')
+        self.w_out['state'] = "disabled"
 
     def connect(self):
+        if self.w_connect['text'] == "Abort":
+            self.pending_abort = True
+            self.output("Stopping the engine...")
+            return
         if not self.rdr:
             self.output("Connecting to RC522 via %s..." % self.port.get())
             t = threading.Thread(target=self.connect_sync)
@@ -116,7 +123,12 @@ class Application(ttk.Frame):
 
     def tag_sync(self, func, args):
         self.output("Waiting for a tag...")
+        self.w_connect['text'] = "Abort"
         while True:
+            if self.pending_abort:
+                self.output("Aborted!")
+                self.pending_abort = False
+                break
             time.sleep(0.3)
             success, data = self.rdr.request()
             if success:
@@ -135,6 +147,7 @@ class Application(ttk.Frame):
                 self.util.deauth()
                 break
         self.output("Ready!")
+        self.w_connect['text'] = "Disconnect"
 
     def read(self):
         user_input = self.w_in.get().upper()

@@ -45,8 +45,13 @@ class RFID(object):
         else:
             self.port = dev
         self.baud_rate = 9600
-        self.serial = serial.Serial(self.port, self.baud_rate)
-        self.serial.timeout = 5
+        try:
+            self.serial = serial.Serial(self.port, self.baud_rate)
+        except serial.SerialException as e:
+            self.output("Failed to open " + self.port + "! \n" + str(e))
+            return
+        else:
+            self.serial.timeout = 5
 
         # Initialize
         if not self.reset():
