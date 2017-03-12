@@ -12,3 +12,8 @@ Cut the VCC pull-up of the `EA` pin (32). You can optionally connect it to GND, 
 
 * MISO = TX
 * SDA = RX
+
+So you will have
+
+RX  |  - | -  | TX  | -  | GND |  - | 3V3
+--- | --- | --- | --- | --- | --- | --- | ---
